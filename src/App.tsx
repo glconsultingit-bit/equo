@@ -29,10 +29,6 @@ function AppContent(){
   const [inviteCopied,setInviteCopied]=useState(false)
   const [deleteConfirm,setDeleteConfirm]=useState<string|null>(null)
   const [payments,setPayments]=useState<any[]>([])
-  const [showEditGroup,setShowEditGroup]=useState<any>(null)
-  const [editGroupName,setEditGroupName]=useState('')
-  const [editMembers,setEditMembers]=useState<string[]>([])
-  const [newMemberName,setNewMemberName]=useState('')
   const [showPay,setShowPay]=useState(false)
   const [payForm,setPayForm]=useState({from:'',to:'',amount:'',note:''})
   const [recurringInfo,setRecurringInfo]=useState<string>('')
@@ -89,6 +85,48 @@ function AppContent(){
   const total=filtered.reduce((s,e)=>s+Number(e.amount),0)
 
   const addGroup=async()=>{ const name=prompt('Nome gruppo'); if(!name) return; const ms=prompt('Membri separati da virgola','Tino, Marco, Sara'); const arr=ms?ms.split(',').map(s=>s.trim()):['Tino']; if(hasSupabase&&user){ const { data } = await supabase.from('groups').insert({name,members:arr,user_id:user.id}).select().single(); if(data){ setGroups([...groups,{id:data.id,name:data.name,members:data.members}]); setActiveGroup(data.id) } } else { const id=Date.now().toString(); setGroups([...groups,{id,name,members:arr}]); setActiveGroup(id) } }
+
+  const openEditGroup=(g:any)=>{
+    setShowEditGroup(g)
+    setEditGroupName(g.name)
+    setEditMembers([...(g.members||[])])
+  }
+  const saveEditGroup=async()=>{
+    if(!editGroupName.trim()) return
+    const cleanMembers = editMembers.filter((m:string)=>m.trim()).map((m:string)=>m.trim())
+    if(cleanMembers.length===0){ alert('Il gruppo deve avere almeno 1 membro'); return }
+    if(hasSupabase&&user){
+      const { data } = await supabase.from('groups').update({name: editGroupName, members: cleanMembers}).eq('id', showEditGroup.id).eq('user_id', user.id).select().single()
+      if(data) setGroups(groups.map((g:any)=>g.id===data.id?{id:data.id,name:data.name,members:data.members}:g))
+    } else {
+      setGroups(groups.map((g:any)=>g.id===showEditGroup.id?{...g,name:editGroupName,members:cleanMembers}:g))
+    }
+    setShowEditGroup(null)
+  }
+  const deleteGroup=async(id:string)=>{
+    if(!confirm('Eliminare questo gruppo? Tutte le spese e i pagamenti del gruppo verranno eliminati!')) return
+    if(hasSupabase&&user){
+      await supabase.from('expenses').delete().eq('group_id',id).eq('user_id',user.id)
+      await supabase.from('groups').delete().eq('id',id).eq('user_id',user.id)
+    }
+    const remaining = groups.filter((g:any)=>g.id!==id)
+    setGroups(remaining)
+    setExpenses(expenses.filter((e:any)=>e.groupId!==id))
+    setPayments(payments.filter((p:any)=>p.groupId!==id))
+    if(activeGroup===id) setActiveGroup(remaining[0]?.id||'')
+    setShowEditGroup(null)
+  }
+  const addMember=()=>{
+    if(!newMemberName.trim()) return
+    if(editMembers.includes(newMemberName.trim())){ alert('Utente già presente'); return }
+    setEditMembers([...editMembers, newMemberName.trim()])
+    setNewMemberName('')
+  }
+  const removeMember=(name:string)=>{
+    if(editMembers.length<=1){ alert('Devi lasciare almeno 1 membro'); return }
+    setEditMembers(editMembers.filter((m:string)=>m!==name))
+  }
+
   const addExpense=async()=>{ if(!form.description||!form.amount) return; setCloudStatus('sync'); 
       const extraData:any = {}
       if(form.receipt) extraData._receipt = form.receipt
@@ -220,8 +258,7 @@ function AppContent(){
 <div className="flex gap-2"><div className="flex-1 bg-[#15181f] border border-[#2a2e3a] rounded-xl px-3 py-2 text-[10px] text-[#8a8f9e] truncate">{`equo-ten.vercel.app?invite=${activeGroup}`}</div><button onClick={copyInvite} className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 ${inviteCopied?'bg-green-500 text-white':'bg-[#d4ff32] text-black'}`}>{inviteCopied?<><Check size={12}/> Copiato!</>:<><Copy size={12}/> Copia</>}</button></div>
 <button onClick={()=>{ const msg=`Unisciti al mio gruppo EQUO "${currentGroup?.name}"! 👉 https://equo-ten.vercel.app?invite=${activeGroup}`; window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank')}} className="w-full mt-2 bg-[#25D366] text-white font-bold rounded-xl py-2.5 text-xs flex items-center justify-center gap-2"><Share2 size={14}/> Invita su WhatsApp</button>
 </div>
-{groups.map(g=><div key={g.id} className={`w-full text-left bg-[#1c1f27] rounded-2xl p-4 border ${activeGroup===g.id?'border-[#d4ff32]':'border-[#2a2e3a]'} relative`}>
-<button onClick={()=>setActiveGroup(g.id)} className="w-full text-left"><div className="flex justify-between items-center"><p className="font-bold text-white">{g.name}</p><div className="flex items-center gap-2">{activeGroup===g.id&&<Check size={16} className="text-[#d4ff32]"/>}<span onClick={(e)=>{e.stopPropagation(); openEditGroup(g)}} className="w-6 h-6 rounded-full bg-[#2a2e3a] flex items-center justify-center text-[10px]">✏️</span></div></div><div className="flex gap-1 mt-2 flex-wrap">{g.members?.map((m:string)=><span key={m} className="px-2 py-1 rounded-full bg-[#d4ff32]/20 text-[#d4ff32] flex items-center justify-center text-[10px] font-bold">{m}</span>)}</div></button></div>)}{/* */}<button onClick={addGroup} className="w-full border border-dashed border-[#2a2e3a] rounded-2xl py-3 text-[#8a8f9e] text-sm">+ Nuovo gruppo</button></div>}{tab==='spese'&&<div className="space-y-3 mt-2">
+{groups.map(g=><button key={g.id} onClick={()=>setActiveGroup(g.id)} className={`w-full text-left bg-[#1c1f27] rounded-2xl p-4 border ${activeGroup===g.id?'border-[#d4ff32]':'border-[#2a2e3a]'}`}><div className="flex justify-between"><p className="font-bold text-white">{g.name}</p>{activeGroup===g.id&&<Check size={16} className="text-[#d4ff32]"/>}</div><div className="flex gap-1 mt-2">{g.members?.map((m:string)=><span key={m} className="w-7 h-7 rounded-full bg-[#d4ff32]/20 text-[#d4ff32] flex items-center justify-center text-[10px] font-bold">{m[0]}</span>)}</div></button>)}{/* */}<button onClick={addGroup} className="w-full border border-dashed border-[#2a2e3a] rounded-2xl py-3 text-[#8a8f9e] text-sm">+ Nuovo gruppo</button></div>}{tab==='spese'&&<div className="space-y-3 mt-2">
 <button onClick={()=>setShowAdd(true)} className="w-full bg-[#d4ff32] text-black font-black rounded-xl py-3 flex items-center justify-center gap-2"><Plus size={16}/> Aggiungi spesa</button>
 {filtered.map(e=><div key={e.id} className="relative group bg-[#1c1f27] rounded-xl p-4 border border-[#2a2e3a] overflow-hidden">
 <div className="flex justify-between items-start"><div className="flex-1"><p className="font-bold text-white flex items-center gap-2">{CATS[e.category]?.emoji} {e.description} {(e as any).receipt||(e as any).splitData?._receipt?<button onClick={()=>setShowReceipt(e)} className="ml-1 bg-[#2a2e3a] p-1 rounded-lg"><ImageIcon size={12} className="text-[#d4ff32]"/></button>:null}</p><p className="text-xs text-[#8a8f9e] mt-1">{e.paidBy} • {e.splitType} • {e.date}</p></div><div className="flex items-center gap-2"><p className="font-bold text-white">€ {Number(e.amount).toFixed(2)}</p><button onClick={()=>setDeleteConfirm(e.id)} className="w-7 h-7 bg-red-500/20 border border-red-500/30 rounded-lg flex items-center justify-center"><Trash2 size={14} className="text-red-400"/></button></div></div>
@@ -264,16 +301,7 @@ function AppContent(){
 <p className="text-xs font-bold text-[#d4ff32] mb-1">Perché installare?</p>
 <p className="text-[11px] text-[#c2c6d1] leading-relaxed">App vera, si apre come WhatsApp, funziona offline, notifiche future, niente più link. Come MotoGarage, ma per le spese di casa.</p>
 </div>
-</div>}</div><nav className="flex-shrink-0 bg-[#15181f] border-t border-[#2a2e3a]"><div className="flex">{TABS.map((t:any)=>{ const Icon=t.icon; const active=tab===t.key; return <button key={t.key} onClick={()=>setTab(t.key)} className={`flex-1 flex flex-col items-center py-3 gap-1 ${active?'text-[#d4ff32]':'text-[#8a8f9e]'}`}><Icon size={22} strokeWidth={active?2.5:2}/><span className="text-[10px]">{t.label}</span></button> })}</div></nav>{showEditGroup&&<div className="fixed inset-0 z-[70] flex items-end justify-center max-w-md mx-auto"><div className="absolute inset-0 bg-black/60" onClick={()=>setShowEditGroup(null)}/><div className="relative w-full bg-[#1c1f27] rounded-t-3xl p-5 border-t border-[#2a2e3a] max-h-[85vh] overflow-y-auto">
-<p className="font-bold text-lg mb-4 text-white">✏️ Modifica Gruppo</p>
-<label className="text-xs text-[#8a8f9e] mb-1 block">Nome gruppo</label><input value={editGroupName} onChange={e=>setEditGroupName(e.target.value)} className="w-full bg-[#15181f] border border-[#2a2e3a] rounded-xl px-4 py-3 mb-4 text-white"/>
-<label className="text-xs text-[#8a8f9e] mb-2 block">Membri ({editMembers.length})</label>
-<div className="space-y-2 mb-3">{editMembers.map((m:string)=><div key={m} className="flex items-center justify-between bg-[#15181f] border border-[#2a2e3a] rounded-xl px-3 py-2"><span className="text-sm text-white">{m}</span><button onClick={()=>removeMember(m)} className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center"><span className="text-red-400 text-xs">✕</span></button></div>)}</div>
-<div className="flex gap-2 mb-5"><input value={newMemberName} onChange={e=>setNewMemberName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') addMember()}} placeholder="Nuovo utente (es. Luca)" className="flex-1 bg-[#15181f] border border-[#2a2e3a] rounded-xl px-4 py-3 text-white text-sm"/><button onClick={addMember} className="bg-[#d4ff32] text-black font-bold px-4 rounded-xl text-sm">+ Aggiungi</button></div>
-<div className="flex gap-2 mb-3"><button onClick={()=>setShowEditGroup(null)} className="flex-1 bg-[#2a2e3a] text-white font-bold rounded-xl py-3">Annulla</button><button onClick={saveEditGroup} className="flex-1 bg-[#d4ff32] text-black font-black rounded-xl py-3">Salva</button></div>
-<button onClick={()=>deleteGroup(showEditGroup.id)} className="w-full border border-red-500/30 text-red-400 font-bold rounded-xl py-3 text-sm flex items-center justify-center gap-2"><span>🗑️</span> Elimina gruppo e tutte le sue spese</button>
-</div></div>}
-{showPay&&<div className="fixed inset-0 z-[60] flex items-end justify-center" max-w-md mx-auto"><div className="absolute inset-0 bg-black/60" onClick={()=>setShowPay(false)}/><div className="relative w-full bg-[#1c1f27] rounded-t-3xl p-5 border-t border-[#2a2e3a]"><p className="font-bold text-lg mb-4 text-white">💸 Registra Pagamento</p><div className="flex gap-2 mb-3"><select value={payForm.from} onChange={e=>setPayForm({...payForm,from:e.target.value})} className="flex-1 bg-[#15181f] border border-[#2a2e3a] rounded-xl px-3 py-3 text-white text-sm"><option value="">Chi paga?</option>{members.map(m=><option key={m} value={m}>{m}</option>)}</select><span className="flex items-center text-white">→</span><select value={payForm.to} onChange={e=>setPayForm({...payForm,to:e.target.value})} className="flex-1 bg-[#15181f] border border-[#2a2e3a] rounded-xl px-3 py-3 text-white text-sm"><option value="">A chi?</option>{members.map(m=><option key={m} value={m}>{m}</option>)}</select></div><input value={payForm.amount} onChange={e=>setPayForm({...payForm,amount:e.target.value})} type="number" placeholder="€ Importo" className="w-full bg-[#15181f] border border-[#2a2e3a] rounded-xl px-4 py-3 mb-3 text-white"/><input value={payForm.note} onChange={e=>setPayForm({...payForm,note:e.target.value})} placeholder="Nota (opzionale)" className="w-full bg-[#15181f] border border-[#2a2e3a] rounded-xl px-4 py-3 mb-4 text-white"/><div className="flex gap-2"><button onClick={()=>setShowPay(false)} className="flex-1 bg-[#2a2e3a] text-white font-bold rounded-xl py-3">Annulla</button><button onClick={addPayment} className="flex-1 bg-[#d4ff32] text-black font-black rounded-xl py-3">Registra Pagamento</button></div></div></div>}
+</div>}</div><nav className="flex-shrink-0 bg-[#15181f] border-t border-[#2a2e3a]"><div className="flex">{TABS.map((t:any)=>{ const Icon=t.icon; const active=tab===t.key; return <button key={t.key} onClick={()=>setTab(t.key)} className={`flex-1 flex flex-col items-center py-3 gap-1 ${active?'text-[#d4ff32]':'text-[#8a8f9e]'}`}><Icon size={22} strokeWidth={active?2.5:2}/><span className="text-[10px]">{t.label}</span></button> })}</div></nav>{showPay&&<div className="fixed inset-0 z-[60] flex items-end justify-center max-w-md mx-auto"><div className="absolute inset-0 bg-black/60" onClick={()=>setShowPay(false)}/><div className="relative w-full bg-[#1c1f27] rounded-t-3xl p-5 border-t border-[#2a2e3a]"><p className="font-bold text-lg mb-4 text-white">💸 Registra Pagamento</p><div className="flex gap-2 mb-3"><select value={payForm.from} onChange={e=>setPayForm({...payForm,from:e.target.value})} className="flex-1 bg-[#15181f] border border-[#2a2e3a] rounded-xl px-3 py-3 text-white text-sm"><option value="">Chi paga?</option>{members.map(m=><option key={m} value={m}>{m}</option>)}</select><span className="flex items-center text-white">→</span><select value={payForm.to} onChange={e=>setPayForm({...payForm,to:e.target.value})} className="flex-1 bg-[#15181f] border border-[#2a2e3a] rounded-xl px-3 py-3 text-white text-sm"><option value="">A chi?</option>{members.map(m=><option key={m} value={m}>{m}</option>)}</select></div><input value={payForm.amount} onChange={e=>setPayForm({...payForm,amount:e.target.value})} type="number" placeholder="€ Importo" className="w-full bg-[#15181f] border border-[#2a2e3a] rounded-xl px-4 py-3 mb-3 text-white"/><input value={payForm.note} onChange={e=>setPayForm({...payForm,note:e.target.value})} placeholder="Nota (opzionale)" className="w-full bg-[#15181f] border border-[#2a2e3a] rounded-xl px-4 py-3 mb-4 text-white"/><div className="flex gap-2"><button onClick={()=>setShowPay(false)} className="flex-1 bg-[#2a2e3a] text-white font-bold rounded-xl py-3">Annulla</button><button onClick={addPayment} className="flex-1 bg-[#d4ff32] text-black font-black rounded-xl py-3">Registra Pagamento</button></div></div></div>}
 {showReceipt&&<div className="fixed inset-0 z-[60] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/80" onClick={()=>setShowReceipt(null)}/><div className="relative bg-[#1c1f27] rounded-2xl p-4 max-w-sm w-full border border-[#2a2e3a]"><div className="flex justify-between items-center mb-3"><p className="font-bold text-white text-sm">{showReceipt.description} - Scontrino</p><button onClick={()=>setShowReceipt(null)} className="w-8 h-8 rounded-full bg-[#15181f] flex items-center justify-center"><X size={14} className="text-white"/></button></div><img src={(showReceipt as any).receipt || (showReceipt as any).splitData?._receipt} className="w-full rounded-xl"/><p className="text-xs text-[#8a8f9e] mt-2">€ {Number(showReceipt.amount).toFixed(2)} - {showReceipt.paidBy}</p></div></div>}
 {showAdd&&<div className="fixed inset-0 z-50 flex items-end justify-center max-w-md mx-auto"><div className="absolute inset-0 bg-black/60" onClick={()=>setShowAdd(false)}/><div className="relative w-full bg-[#1c1f27] rounded-t-3xl p-5 border-t border-[#2a2e3a] max-h-[85vh] overflow-y-auto"><p className="font-bold text-lg mb-4 text-white flex items-center justify-between">Nuova spesa - Cloud {form.receipt&&<span className="text-[10px] bg-[#d4ff32] text-black px-2 py-1 rounded-full flex items-center gap-1"><Camera size={10}/> Foto ok</span>}</p>
 <div className="mb-3">
