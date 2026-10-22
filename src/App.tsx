@@ -37,24 +37,19 @@ function AppContent(){
   const [payForm,setPayForm]=useState({from:'',to:'',amount:'',note:''})
   const [recurringInfo,setRecurringInfo]=useState<string>('')
   const [form,setForm]=useState({description:'',amount:'',paidBy:'',category:'spesa' as Category,splitType:'equal' as SplitType,percents:{} as any,shares:{} as any,recurring:false,frequency:'monthly',receipt:'' as string, receiptName:'' as string})
-  const hasSupabase = !!supabase
+  const hasSupabase = false // FORCE OFFLINE FIX per outage Supabase - riattiva dopo mettendo !!supabase
 
   useEffect(()=>{
     if(!user) return
     const load=async()=>{
       setCloudLoading(true)
-      if(hasSupabase){
-        try{
-          const { data: gData } = await supabase.from('groups').select('*').eq('user_id', user.id).order('created_at')
-          const { data: eData } = await supabase.from('expenses').select('*').eq('user_id', user.id).order('created_at',{ascending:false})
-          if(gData && gData.length>0){ setGroups(gData.map((g:any)=>({id:g.id,name:g.name,members:g.members||['Tino']}))); setActiveGroup(gData[0].id) }
-          else { const { data:newG } = await supabase.from('groups').insert({name:'Casa Cumiana',members:['Tino','Marco','Sara'],user_id:user.id}).select().single(); if(newG){ setGroups([{id:newG.id,name:newG.name,members:newG.members}]); setActiveGroup(newG.id) } }
-          if(eData) setExpenses(eData.map((e:any)=>({id:e.id,groupId:e.group_id,description:e.description,amount:e.amount,paidBy:e.paid_by,category:e.category,splitType:e.split_type,splitData:e.split_data,date:e.created_at?.slice(0,10),recurring:e.is_recurring})))
-          setCloudStatus('cloud')
-        }catch(e){ setCloudStatus('offline') }
-      }else{
-        const lg=JSON.parse(localStorage.getItem('equo_groups')||'[]'); const le=JSON.parse(localStorage.getItem('equo_expenses')||'[]'); const lp=JSON.parse(localStorage.getItem('equo_payments')||'[]'); if(lg.length){ setGroups(lg); setActiveGroup(lg[0].id) } if(le.length) setExpenses(le); if(lp.length) setPayments(lp); setCloudStatus('offline')
-      }
+      try{
+        const lg=JSON.parse(localStorage.getItem('equo_groups')||'[]'); const le=JSON.parse(localStorage.getItem('equo_expenses')||'[]'); const lp=JSON.parse(localStorage.getItem('equo_payments')||'[]');
+        if(lg.length){ setGroups(lg); setActiveGroup(lg[0].id) } else { const id='1'; const def=[{id,name:'Casa Cumiana',members:['Tino','Marco','Sara']}]; setGroups(def); setActiveGroup(id); }
+        if(le.length) setExpenses(le);
+        if(lp.length) setPayments(lp);
+        setCloudStatus('offline')
+      }catch(e){ setCloudStatus('offline') }
       setCloudLoading(false)
     }
     load()
